@@ -1,0 +1,46 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Android Studio and Kotlin local state
+.idea/
+.kotlin/
+
+# Firebase client configuration (keep local; do not commit)
+google-services.json
+
+# Environment files
+.env
+.env.*
+*.env
+
+# Signing keys and certificates
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+
+# Signing configuration
+signing.properties
+keystore.properties
+
+# Service account and credential files
+*service-account*.json
+*credential*.json
+
+# Windows OS metadata
+Thumbs.db
+Desktop.ini

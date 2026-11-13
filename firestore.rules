@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // User accounts collection (/users/{userId})
+    match /users/{userId} {
+      // Authenticated users can read their own account document
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Allow newly registered user to create their initial user account document (role must be STUDENT or PROVIDER, non-ADMIN)
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.role in ['STUDENT', 'PROVIDER']
+        && request.resource.data.role != 'ADMIN';
+
+      // Disallow user self-modification or role tampering on existing user documents
+      allow update, delete: if false;
+    }
+
+    // Student Profiles collection (/studentProfiles/{studentId})
+    match /studentProfiles/{studentId} {
+      // Owner student can read and write their own student profile document
+      allow read, write: if request.auth != null && request.auth.uid == studentId;
+
+      // Unrestricted provider access to private profiles is denied.
+      // Per Shared Domain Contract Section 8, applicant profile evaluation access
+      // is provided via applicant data projection snapshots in /applications.
+    }
+  }
+}
