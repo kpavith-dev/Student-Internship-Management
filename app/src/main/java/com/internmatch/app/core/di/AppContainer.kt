@@ -5,14 +5,24 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.internmatch.app.data.repository.DefaultFirebaseAuthClient
+import com.internmatch.app.data.repository.DefaultFirebaseBookmarkClient
+import com.internmatch.app.data.repository.DefaultFirebaseInternshipClient
 import com.internmatch.app.data.repository.DefaultFirebaseStudentProfileClient
 import com.internmatch.app.data.repository.DefaultSkillRepository
-import com.internmatch.app.data.repository.FirebaseStudentProfileClient
 import com.internmatch.app.data.repository.FirebaseAuthRepository
+import com.internmatch.app.data.repository.FirebaseBookmarkClient
+import com.internmatch.app.data.repository.FirebaseInternshipClient
+import com.internmatch.app.data.repository.FirebaseStudentProfileClient
+import com.internmatch.app.data.repository.FirestoreBookmarkRepository
+import com.internmatch.app.data.repository.FirestoreInternshipRepository
 import com.internmatch.app.data.repository.FirestoreStudentProfileRepository
 import com.internmatch.app.domain.repository.AuthRepository
+import com.internmatch.app.domain.repository.BookmarkRepository
+import com.internmatch.app.domain.repository.InternshipRepository
 import com.internmatch.app.domain.repository.SkillRepository
 import com.internmatch.app.domain.repository.StudentProfileRepository
+import com.internmatch.app.domain.service.DefaultMatchScoreProvider
+import com.internmatch.app.domain.service.MatchScoreProvider
 
 /**
  * Dependency injection container for the application.
@@ -24,10 +34,13 @@ interface AppContainer {
     val authRepository: AuthRepository
     val studentProfileRepository: StudentProfileRepository
     val skillRepository: SkillRepository
+    val internshipRepository: InternshipRepository
+    val bookmarkRepository: BookmarkRepository
+    val matchScoreProvider: MatchScoreProvider
 }
 
 /**
- * Fallback client used when Firebase SDK initialization is unconfigured or unavailable.
+ * Fallback clients used when Firebase SDK initialization is unconfigured or unavailable.
  */
 private class UnconfiguredFirebaseStudentProfileClient : FirebaseStudentProfileClient {
     override val isConfigured: Boolean get() = false
@@ -39,6 +52,22 @@ private class UnconfiguredFirebaseStudentProfileClient : FirebaseStudentProfileC
         throw IllegalStateException("Firebase Firestore is unconfigured.")
     }
     override suspend fun updateSkillProficiencies(studentId: String, skillProficienciesData: List<Map<String, Any?>>) {
+        throw IllegalStateException("Firebase Firestore is unconfigured.")
+    }
+}
+
+private class UnconfiguredFirebaseInternshipClient : FirebaseInternshipClient {
+    override val isConfigured: Boolean get() = false
+    override suspend fun getApprovedInternships(limit: Long): List<Map<String, Any?>> = emptyList()
+}
+
+private class UnconfiguredFirebaseBookmarkClient : FirebaseBookmarkClient {
+    override val isConfigured: Boolean get() = false
+    override suspend fun getBookmarks(studentId: String): List<Map<String, Any?>> = emptyList()
+    override suspend fun addBookmark(studentId: String, internshipId: String, data: Map<String, Any?>) {
+        throw IllegalStateException("Firebase Firestore is unconfigured.")
+    }
+    override suspend fun removeBookmark(studentId: String, internshipId: String) {
         throw IllegalStateException("Firebase Firestore is unconfigured.")
     }
 }
@@ -107,5 +136,64 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val skillRepository: SkillRepository by lazy {
         DefaultSkillRepository()
+    }
+
+    override val internshipRepository: InternshipRepository by lazy {
+        val appContext = context.applicationContext
+        val isFirebaseInitialized = try {
+            FirebaseApp.getApps(appContext).isNotEmpty()
+        } catch (_: Throwable) {
+            false
+        }
+
+        val client: FirebaseInternshipClient = if (isFirebaseInitialized) {
+            try {
+                DefaultFirebaseInternshipClient(FirebaseFirestore.getInstance())
+            } catch (_: Throwable) {
+                UnconfiguredFirebaseInternshipClient()
+            }
+        } else {
+            UnconfiguredFirebaseInternshipClient()
+        }
+
+        FirestoreInternshipRepository(internshipClient = client)
+    }
+
+    override val bookmarkRepository: BookmarkRepository by lazy {
+        val appContext = context.applicationContext
+        val isFirebaseInitialized = try {
+            FirebaseApp.getApps(appContext).isNotEmpty()
+        } catch (_: Throwable) {
+            false
+        }
+
+        val client: FirebaseBookmarkClient = if (isFirebaseInitialized) {
+            try {
+                DefaultFirebaseBookmarkClient(FirebaseFirestore.getInstance())
+            } catch (_: Throwable) {
+                UnconfiguredFirebaseBookmarkClient()
+            }
+        } else {
+            UnconfiguredFirebaseBookmarkClient()
+        }
+
+        FirestoreBookmarkRepository(
+            bookmarkClient = client,
+            authenticatedUserIdProvider = {
+                if (isFirebaseInitialized) {
+                    try {
+                        FirebaseAuth.getInstance().currentUser?.uid
+                    } catch (_: Throwable) {
+                        null
+                    }
+                } else {
+                    null
+                }
+            }
+        )
+    }
+
+    override val matchScoreProvider: MatchScoreProvider by lazy {
+        DefaultMatchScoreProvider()
     }
 }
