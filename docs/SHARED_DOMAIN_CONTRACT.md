@@ -215,8 +215,11 @@ data class Internship(
     val companyName: String,         // [PROPOSED] Company name field & String type
     val title: String,               // [PROPOSED] Job title field & String type
     val description: String,         // [PROPOSED] Description field & String type
-    val location: String,            // [PROPOSED] Location string field & String type
-    val employmentType: String,      // [PROPOSED] Employment type representation & field
+    val location: String,            // [PROPOSED] Location string field & String type (street/city address)
+    val employmentType: String,      // [PROPOSED] Employment type representation & field (e.g. FULL_TIME, PART_TIME)
+    val domain: String = "",         // [PROPOSED FR16 EXTENSION] Specialization domain filter (e.g. Software Engineering)
+    val district: String = "",       // [PROPOSED FR16 EXTENSION] Geographic district filter (e.g. Colombo, Kandy)
+    val workMode: String = "",       // [PROPOSED FR16 EXTENSION] Work location model filter (e.g. ON_SITE, HYBRID, REMOTE)
     val requiredSkills: List<RequiredSkill>, // [PROPOSED] Field & List representation (required-skill relationship is [ACCEPTED])
     val status: InternshipStatus,    // [PROPOSED] Field & InternshipStatus enum type (APPROVED visibility rule is [ACCEPTED])
     val applicationDeadline: Long,   // [PROPOSED] Deadline timestamp field & Long type
