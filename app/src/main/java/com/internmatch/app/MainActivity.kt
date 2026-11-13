@@ -5,28 +5,41 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.internmatch.app.core.di.AuthViewModelFactory
 import com.internmatch.app.core.di.ProfileViewModelFactory
+import com.internmatch.app.core.di.SearchViewModelFactory
 import com.internmatch.app.ui.auth.AuthScreen
 import com.internmatch.app.ui.auth.AuthViewModel
+import com.internmatch.app.ui.bookmark.BookmarkScreen
+import com.internmatch.app.ui.bookmark.BookmarkUiState
+import com.internmatch.app.ui.bookmark.BookmarkViewModel
 import com.internmatch.app.ui.profile.StudentProfileScreen
 import com.internmatch.app.ui.profile.StudentProfileUiState
 import com.internmatch.app.ui.profile.StudentProfileViewModel
+import com.internmatch.app.ui.search.InternshipSearchScreen
+import com.internmatch.app.ui.search.InternshipSearchUiState
+import com.internmatch.app.ui.search.InternshipSearchViewModel
 import com.internmatch.app.ui.theme.InternMatchTheme
 
 class MainActivity : ComponentActivity() {
@@ -51,10 +64,23 @@ class MainActivity : ComponentActivity() {
             )
         )[StudentProfileViewModel::class.java]
 
+        val searchViewModelFactory = SearchViewModelFactory(
+            internshipRepository = appContainer.internshipRepository,
+            bookmarkRepository = appContainer.bookmarkRepository,
+            studentProfileRepository = appContainer.studentProfileRepository,
+            authRepository = appContainer.authRepository,
+            matchScoreProvider = appContainer.matchScoreProvider
+        )
+
+        val searchViewModel = ViewModelProvider(this, searchViewModelFactory)[InternshipSearchViewModel::class.java]
+        val bookmarkViewModel = ViewModelProvider(this, searchViewModelFactory)[BookmarkViewModel::class.java]
+
         setContent {
             InternMatchTheme {
                 val authUiState by authViewModel.uiState.collectAsStateWithLifecycle()
                 val profileUiState by profileViewModel.uiState.collectAsStateWithLifecycle()
+                val searchUiState by searchViewModel.uiState.collectAsStateWithLifecycle()
+                val bookmarkUiState by bookmarkViewModel.uiState.collectAsStateWithLifecycle()
 
                 if (authUiState.currentUser == null) {
                     AuthScreen(
@@ -70,7 +96,11 @@ class MainActivity : ComponentActivity() {
                     MainAppContent(
                         authViewModel = authViewModel,
                         profileViewModel = profileViewModel,
-                        profileUiState = profileUiState
+                        profileUiState = profileUiState,
+                        searchViewModel = searchViewModel,
+                        searchUiState = searchUiState,
+                        bookmarkViewModel = bookmarkViewModel,
+                        bookmarkUiState = bookmarkUiState
                     )
                 }
             }
@@ -83,8 +113,15 @@ class MainActivity : ComponentActivity() {
 private fun MainAppContent(
     authViewModel: AuthViewModel,
     profileViewModel: StudentProfileViewModel,
-    profileUiState: StudentProfileUiState
+    profileUiState: StudentProfileUiState,
+    searchViewModel: InternshipSearchViewModel,
+    searchUiState: InternshipSearchUiState,
+    bookmarkViewModel: BookmarkViewModel,
+    bookmarkUiState: BookmarkUiState
 ) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabs = listOf("Search", "Bookmarks", "Profile")
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -101,23 +138,61 @@ private fun MainAppContent(
             )
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            StudentProfileScreen(
-                uiState = profileUiState,
-                onStartEditing = profileViewModel::startEditing,
-                onCancelEditing = profileViewModel::cancelEditing,
-                onSaveProfile = profileViewModel::saveProfile,
-                onAddSkillProficiency = profileViewModel::addSkillProficiency,
-                onUpdateSkillProficiency = profileViewModel::updateSkillProficiency,
-                onRemoveSkillProficiency = profileViewModel::removeSkillProficiency,
-                onClearError = profileViewModel::clearError,
-                onClearSuccess = profileViewModel::clearSuccess,
-                modifier = Modifier.fillMaxSize()
-            )
+            TabRow(selectedTabIndex = selectedTab) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = {
+                            selectedTab = index
+                            if (index == 0) searchViewModel.loadData()
+                            if (index == 1) bookmarkViewModel.loadBookmarks()
+                        },
+                        text = { Text(title, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal) }
+                    )
+                }
+            }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                when (selectedTab) {
+                    0 -> InternshipSearchScreen(
+                        uiState = searchUiState,
+                        onQueryChange = searchViewModel::updateQuery,
+                        onDomainChange = searchViewModel::updateDomain,
+                        onDistrictChange = searchViewModel::updateDistrict,
+                        onWorkModeChange = searchViewModel::updateWorkMode,
+                        onMinScoreChange = searchViewModel::updateMinMatchScore,
+                        onClearFilters = searchViewModel::clearFilters,
+                        onToggleBookmark = searchViewModel::toggleBookmark,
+                        onRetry = searchViewModel::loadData,
+                        onClearError = searchViewModel::clearError,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    1 -> BookmarkScreen(
+                        uiState = bookmarkUiState,
+                        onRemoveBookmark = bookmarkViewModel::removeBookmark,
+                        onRetry = bookmarkViewModel::loadBookmarks,
+                        onClearError = bookmarkViewModel::clearError,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    2 -> StudentProfileScreen(
+                        uiState = profileUiState,
+                        onStartEditing = profileViewModel::startEditing,
+                        onCancelEditing = profileViewModel::cancelEditing,
+                        onSaveProfile = profileViewModel::saveProfile,
+                        onAddSkillProficiency = profileViewModel::addSkillProficiency,
+                        onUpdateSkillProficiency = profileViewModel::updateSkillProficiency,
+                        onRemoveSkillProficiency = profileViewModel::removeSkillProficiency,
+                        onClearError = profileViewModel::clearError,
+                        onClearSuccess = profileViewModel::clearSuccess,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
         }
     }
 }
