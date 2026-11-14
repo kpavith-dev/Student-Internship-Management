@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.internmatch.app.domain.model.Internship
 import com.internmatch.app.ui.search.InternshipItemUiState
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -29,6 +30,7 @@ import com.internmatch.app.ui.search.InternshipItemUiState
 fun InternshipCard(
     itemUiState: InternshipItemUiState,
     onToggleBookmark: (String) -> Unit,
+    onApply: ((Internship) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val internship = itemUiState.internship
@@ -139,14 +141,23 @@ fun InternshipCard(
                     }
                 }
 
-                OutlinedButton(
-                    onClick = { onToggleBookmark(internship.id) },
-                    modifier = Modifier.padding(start = 8.dp)
-                ) {
-                    Text(
-                        text = if (itemUiState.isBookmarked) "★ Saved" else "☆ Save",
-                        fontWeight = if (itemUiState.isBookmarked) FontWeight.Bold else FontWeight.Normal
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (onApply != null) {
+                        androidx.compose.material3.Button(
+                            onClick = { onApply(internship) }
+                        ) {
+                            Text("Apply", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { onToggleBookmark(internship.id) }
+                    ) {
+                        Text(
+                            text = if (itemUiState.isBookmarked) "★ Saved" else "☆ Save",
+                            fontWeight = if (itemUiState.isBookmarked) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
                 }
             }
         }
