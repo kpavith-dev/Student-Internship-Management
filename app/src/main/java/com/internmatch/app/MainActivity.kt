@@ -20,15 +20,24 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.internmatch.app.core.di.ApplicationViewModelFactory
 import com.internmatch.app.core.di.AuthViewModelFactory
 import com.internmatch.app.core.di.ProfileViewModelFactory
 import com.internmatch.app.core.di.SearchViewModelFactory
+import com.internmatch.app.domain.model.Internship
+import com.internmatch.app.ui.application.ApplicationDetailDialog
+import com.internmatch.app.ui.application.ApplicationDetailsUiState
+import com.internmatch.app.ui.application.ApplicationSubmissionUiState
+import com.internmatch.app.ui.application.ApplicationViewModel
+import com.internmatch.app.ui.application.StudentApplicationsScreen
+import com.internmatch.app.ui.application.StudentApplicationsUiState
 import com.internmatch.app.ui.auth.AuthScreen
 import com.internmatch.app.ui.auth.AuthViewModel
 import com.internmatch.app.ui.bookmark.BookmarkScreen
@@ -40,6 +49,7 @@ import com.internmatch.app.ui.profile.StudentProfileViewModel
 import com.internmatch.app.ui.search.InternshipSearchScreen
 import com.internmatch.app.ui.search.InternshipSearchUiState
 import com.internmatch.app.ui.search.InternshipSearchViewModel
+import com.internmatch.app.ui.search.components.ApplyDialog
 import com.internmatch.app.ui.theme.InternMatchTheme
 
 class MainActivity : ComponentActivity() {
@@ -75,12 +85,24 @@ class MainActivity : ComponentActivity() {
         val searchViewModel = ViewModelProvider(this, searchViewModelFactory)[InternshipSearchViewModel::class.java]
         val bookmarkViewModel = ViewModelProvider(this, searchViewModelFactory)[BookmarkViewModel::class.java]
 
+        val applicationViewModel = ViewModelProvider(
+            this,
+            ApplicationViewModelFactory(
+                applicationRepository = appContainer.applicationRepository,
+                authRepository = appContainer.authRepository
+            )
+        )[ApplicationViewModel::class.java]
+
         setContent {
             InternMatchTheme {
                 val authUiState by authViewModel.uiState.collectAsStateWithLifecycle()
                 val profileUiState by profileViewModel.uiState.collectAsStateWithLifecycle()
                 val searchUiState by searchViewModel.uiState.collectAsStateWithLifecycle()
                 val bookmarkUiState by bookmarkViewModel.uiState.collectAsStateWithLifecycle()
+
+                val submissionUiState by applicationViewModel.submissionState.collectAsStateWithLifecycle()
+                val studentApplicationsUiState by applicationViewModel.applicationsState.collectAsStateWithLifecycle()
+                val detailsUiState by applicationViewModel.detailsState.collectAsStateWithLifecycle()
 
                 if (authUiState.currentUser == null) {
                     AuthScreen(
@@ -100,7 +122,11 @@ class MainActivity : ComponentActivity() {
                         searchViewModel = searchViewModel,
                         searchUiState = searchUiState,
                         bookmarkViewModel = bookmarkViewModel,
-                        bookmarkUiState = bookmarkUiState
+                        bookmarkUiState = bookmarkUiState,
+                        applicationViewModel = applicationViewModel,
+                        submissionUiState = submissionUiState,
+                        studentApplicationsUiState = studentApplicationsUiState,
+                        detailsUiState = detailsUiState
                     )
                 }
             }
@@ -117,10 +143,17 @@ private fun MainAppContent(
     searchViewModel: InternshipSearchViewModel,
     searchUiState: InternshipSearchUiState,
     bookmarkViewModel: BookmarkViewModel,
-    bookmarkUiState: BookmarkUiState
+    bookmarkUiState: BookmarkUiState,
+    applicationViewModel: ApplicationViewModel,
+    submissionUiState: ApplicationSubmissionUiState,
+    studentApplicationsUiState: StudentApplicationsUiState,
+    detailsUiState: ApplicationDetailsUiState
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Search", "Bookmarks", "Profile")
+    var applyingInternship by remember { mutableStateOf<Internship?>(null) }
+    var selectedApplicationId by remember { mutableStateOf<String?>(null) }
+
+    val tabs = listOf("Search", "Bookmarks", "Applications", "Profile")
 
     Scaffold(
         topBar = {
@@ -151,6 +184,7 @@ private fun MainAppContent(
                             selectedTab = index
                             if (index == 0) searchViewModel.loadData()
                             if (index == 1) bookmarkViewModel.loadBookmarks()
+                            if (index == 2) applicationViewModel.observeStudentApplications()
                         },
                         text = { Text(title, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal) }
                     )
@@ -170,6 +204,10 @@ private fun MainAppContent(
                         onToggleBookmark = searchViewModel::toggleBookmark,
                         onRetry = searchViewModel::loadData,
                         onClearError = searchViewModel::clearError,
+                        onApply = { internship ->
+                            applicationViewModel.resetSubmissionState()
+                            applyingInternship = internship
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
                     1 -> BookmarkScreen(
@@ -177,9 +215,22 @@ private fun MainAppContent(
                         onRemoveBookmark = bookmarkViewModel::removeBookmark,
                         onRetry = bookmarkViewModel::loadBookmarks,
                         onClearError = bookmarkViewModel::clearError,
+                        onApply = { internship ->
+                            applicationViewModel.resetSubmissionState()
+                            applyingInternship = internship
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
-                    2 -> StudentProfileScreen(
+                    2 -> StudentApplicationsScreen(
+                        uiState = studentApplicationsUiState,
+                        onSelectApplication = { appId ->
+                            selectedApplicationId = appId
+                            applicationViewModel.loadApplicationDetails(appId)
+                        },
+                        onRetry = applicationViewModel::observeStudentApplications,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    3 -> StudentProfileScreen(
                         uiState = profileUiState,
                         onStartEditing = profileViewModel::startEditing,
                         onCancelEditing = profileViewModel::cancelEditing,
@@ -192,6 +243,30 @@ private fun MainAppContent(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
+            }
+
+            if (applyingInternship != null) {
+                ApplyDialog(
+                    internship = applyingInternship!!,
+                    submissionState = submissionUiState,
+                    onSubmitApplication = { internshipId, coverLetter ->
+                        applicationViewModel.submitApplication(internshipId, coverLetter)
+                    },
+                    onDismiss = {
+                        applyingInternship = null
+                        applicationViewModel.resetSubmissionState()
+                    }
+                )
+            }
+
+            if (selectedApplicationId != null) {
+                ApplicationDetailDialog(
+                    uiState = detailsUiState,
+                    onWithdraw = { appId ->
+                        applicationViewModel.withdrawApplication(appId)
+                    },
+                    onDismiss = { selectedApplicationId = null }
+                )
             }
         }
     }

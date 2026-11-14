@@ -31,6 +31,7 @@ fun BookmarkScreen(
     onRemoveBookmark: (String) -> Unit,
     onRetry: () -> Unit,
     onClearError: () -> Unit,
+    onApply: ((com.internmatch.app.domain.model.Internship) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -111,7 +112,8 @@ fun BookmarkScreen(
                     ) { item ->
                         InternshipCard(
                             itemUiState = item,
-                            onToggleBookmark = onRemoveBookmark
+                            onToggleBookmark = onRemoveBookmark,
+                            onApply = onApply
                         )
                     }
                 }

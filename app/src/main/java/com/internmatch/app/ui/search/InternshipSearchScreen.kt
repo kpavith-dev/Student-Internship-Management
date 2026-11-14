@@ -51,6 +51,7 @@ fun InternshipSearchScreen(
     onToggleBookmark: (String) -> Unit,
     onRetry: () -> Unit,
     onClearError: () -> Unit,
+    onApply: ((com.internmatch.app.domain.model.Internship) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var domainExpanded by remember { mutableStateOf(false) }
@@ -290,7 +291,8 @@ fun InternshipSearchScreen(
                     ) { item ->
                         InternshipCard(
                             itemUiState = item,
-                            onToggleBookmark = onToggleBookmark
+                            onToggleBookmark = onToggleBookmark,
+                            onApply = onApply
                         )
                     }
                 }
