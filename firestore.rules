@@ -34,5 +34,85 @@ service cloud.firestore {
       // Posting/editing managed by Provider/Admin roles
       allow write: if false;
     }
+
+    // Applications collection (/applications/{applicationId})
+    match /applications/{applicationId} {
+      // Authenticated student can read ONLY their own applications
+      // Provider read access is pending future provider module integration
+      allow read: if request.auth != null && resource.data.studentId == request.auth.uid;
+
+      // Authenticated student (role = STUDENT in /users/{userId}) can submit a new application for themselves with initial status SUBMITTED.
+      // Enforces deterministic document ID matching: applicationId MUST equal internshipId + '_' + studentId.
+      // Enforces allowed field schema keys to prevent unexpected/privileged payload injection.
+      // Validates that the referenced internship exists in /internships/{internshipId} and has status = APPROVED.
+      allow create: if request.auth != null &&
+        request.resource.data.studentId == request.auth.uid &&
+        request.resource.data.id == applicationId &&
+        applicationId == request.resource.data.internshipId + '_' + request.auth.uid &&
+        request.resource.data.status == 'SUBMITTED' &&
+        request.resource.data.internshipId is string &&
+        request.resource.data.internshipId.size() > 0 &&
+        request.resource.data.submittedAt is number &&
+        request.resource.data.profileSnapshot is map &&
+        request.resource.data.keys().hasOnly([
+          'id', 'internshipId', 'studentId', 'companyName', 'internshipTitle',
+          'status', 'submittedAt', 'updatedAt', 'matchScore', 'coverLetter',
+          'resumeUrl', 'profileSnapshot'
+        ]) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'STUDENT' &&
+        exists(/databases/$(database)/documents/internships/$(request.resource.data.internshipId)) &&
+        get(/databases/$(database)/documents/internships/$(request.resource.data.internshipId)).data.status == 'APPROVED';
+
+      // Owner student can ONLY transition status from (SUBMITTED, UNDER_REVIEW, SHORTLISTED) to WITHDRAWN.
+      // Enforces strict field-diff checks (only 'status' and 'updatedAt' may be modified).
+      // Preserves studentId and internshipId immutability.
+      // Student-created transitions to ACCEPTED, REJECTED, SHORTLISTED, or UNDER_REVIEW are strictly prohibited.
+      allow update: if request.auth != null &&
+        resource.data.studentId == request.auth.uid &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.internshipId == resource.data.internshipId &&
+        resource.data.status in ['SUBMITTED', 'UNDER_REVIEW', 'SHORTLISTED'] &&
+        request.resource.data.status == 'WITHDRAWN' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      // Deleting application records is strictly prohibited
+      allow delete: if false;
+
+      // Status History subcollection (/applications/{applicationId}/history/{historyId})
+      match /history/{historyId} {
+        // Readable ONLY by the owning student of the parent application
+        allow read: if request.auth != null &&
+          get(/databases/$(database)/documents/applications/$(applicationId)).data.studentId == request.auth.uid;
+
+        // Append-only creation of status history audit events by the owning student using before & after transaction validation
+        // Enforces document ID matching: request.resource.data.id == historyId.
+        // Enforces allowed field schema keys (id, applicationId, status, timestamp, actorUid, note).
+        // - Initial SUBMITTED history: parent application must NOT exist before transaction, and must exist with status SUBMITTED after transaction
+        // - WITHDRAWN history: parent application must exist before transaction with status in (SUBMITTED, UNDER_REVIEW, SHORTLISTED), and must have status WITHDRAWN after transaction
+        allow create: if request.auth != null &&
+          request.resource.data.id == historyId &&
+          request.resource.data.actorUid == request.auth.uid &&
+          request.resource.data.applicationId == applicationId &&
+          request.resource.data.keys().hasOnly(['id', 'applicationId', 'status', 'timestamp', 'actorUid', 'note']) &&
+          (
+            (
+              request.resource.data.status == 'SUBMITTED' &&
+              !exists(/databases/$(database)/documents/applications/$(applicationId)) &&
+              getAfter(/databases/$(database)/documents/applications/$(applicationId)).data.studentId == request.auth.uid &&
+              getAfter(/databases/$(database)/documents/applications/$(applicationId)).data.status == 'SUBMITTED'
+            ) ||
+            (
+              request.resource.data.status == 'WITHDRAWN' &&
+              exists(/databases/$(database)/documents/applications/$(applicationId)) &&
+              get(/databases/$(database)/documents/applications/$(applicationId)).data.studentId == request.auth.uid &&
+              get(/databases/$(database)/documents/applications/$(applicationId)).data.status in ['SUBMITTED', 'UNDER_REVIEW', 'SHORTLISTED'] &&
+              getAfter(/databases/$(database)/documents/applications/$(applicationId)).data.status == 'WITHDRAWN'
+            )
+          );
+
+        // Modifying or deleting audit history records is strictly prohibited
+        allow update, delete: if false;
+      }
+    }
   }
 }
