@@ -6,16 +6,20 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.internmatch.app.data.repository.DefaultFirebaseAuthClient
 import com.internmatch.app.data.repository.DefaultFirebaseBookmarkClient
+import com.internmatch.app.data.repository.DefaultFirebaseApplicationClient
 import com.internmatch.app.data.repository.DefaultFirebaseInternshipClient
 import com.internmatch.app.data.repository.DefaultFirebaseStudentProfileClient
 import com.internmatch.app.data.repository.DefaultSkillRepository
 import com.internmatch.app.data.repository.FirebaseAuthRepository
 import com.internmatch.app.data.repository.FirebaseBookmarkClient
+import com.internmatch.app.data.repository.FirebaseApplicationClient
 import com.internmatch.app.data.repository.FirebaseInternshipClient
 import com.internmatch.app.data.repository.FirebaseStudentProfileClient
 import com.internmatch.app.data.repository.FirestoreBookmarkRepository
+import com.internmatch.app.data.repository.FirestoreApplicationRepository
 import com.internmatch.app.data.repository.FirestoreInternshipRepository
 import com.internmatch.app.data.repository.FirestoreStudentProfileRepository
+import com.internmatch.app.domain.repository.ApplicationRepository
 import com.internmatch.app.domain.repository.AuthRepository
 import com.internmatch.app.domain.repository.BookmarkRepository
 import com.internmatch.app.domain.repository.InternshipRepository
@@ -36,6 +40,7 @@ interface AppContainer {
     val skillRepository: SkillRepository
     val internshipRepository: InternshipRepository
     val bookmarkRepository: BookmarkRepository
+    val applicationRepository: ApplicationRepository
     val matchScoreProvider: MatchScoreProvider
 }
 
@@ -68,6 +73,28 @@ private class UnconfiguredFirebaseBookmarkClient : FirebaseBookmarkClient {
         throw IllegalStateException("Firebase Firestore is unconfigured.")
     }
     override suspend fun removeBookmark(studentId: String, internshipId: String) {
+        throw IllegalStateException("Firebase Firestore is unconfigured.")
+    }
+}
+
+private class UnconfiguredFirebaseApplicationClient : FirebaseApplicationClient {
+    override val isConfigured: Boolean get() = false
+    override suspend fun submitApplicationTransaction(
+        applicationId: String,
+        applicationData: Map<String, Any?>,
+        historyData: Map<String, Any?>
+    ) {
+        throw IllegalStateException("Firebase Firestore is unconfigured.")
+    }
+    override suspend fun hasStudentApplied(studentId: String, internshipId: String): Boolean = false
+    override suspend fun getStudentApplications(studentId: String): List<Map<String, Any?>> = emptyList()
+    override suspend fun getApplicationById(applicationId: String): Map<String, Any?>? = null
+    override suspend fun getApplicationHistory(applicationId: String): List<Map<String, Any?>> = emptyList()
+    override suspend fun withdrawApplicationTransaction(
+        applicationId: String,
+        studentId: String,
+        historyData: Map<String, Any?>
+    ) {
         throw IllegalStateException("Firebase Firestore is unconfigured.")
     }
 }
@@ -179,6 +206,43 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
         FirestoreBookmarkRepository(
             bookmarkClient = client,
+            authenticatedUserIdProvider = {
+                if (isFirebaseInitialized) {
+                    try {
+                        FirebaseAuth.getInstance().currentUser?.uid
+                    } catch (_: Throwable) {
+                        null
+                    }
+                } else {
+                    null
+                }
+            }
+        )
+    }
+
+    override val applicationRepository: ApplicationRepository by lazy {
+        val appContext = context.applicationContext
+        val isFirebaseInitialized = try {
+            FirebaseApp.getApps(appContext).isNotEmpty()
+        } catch (_: Throwable) {
+            false
+        }
+
+        val client: FirebaseApplicationClient = if (isFirebaseInitialized) {
+            try {
+                DefaultFirebaseApplicationClient(FirebaseFirestore.getInstance())
+            } catch (_: Throwable) {
+                UnconfiguredFirebaseApplicationClient()
+            }
+        } else {
+            UnconfiguredFirebaseApplicationClient()
+        }
+
+        FirestoreApplicationRepository(
+            applicationClient = client,
+            internshipRepository = internshipRepository,
+            studentProfileRepository = studentProfileRepository,
+            matchScoreProvider = matchScoreProvider,
             authenticatedUserIdProvider = {
                 if (isFirebaseInitialized) {
                     try {
